@@ -1,4 +1,6 @@
 import torch
+import matplotlib.pyplot as plt
+import numpy as np
 
 class Neuron:
     def __init__(self, neuron_type):
@@ -164,4 +166,70 @@ class Net:
         self.inputs = torch.tensor(self.inputs)
         self.outputs = torch.tensor(self.outputs)
         print("self.inputs and self.outputs are now tensors of shape {} and {} respectively!".format(self.inputs.shape, self.outputs.shape))
+  
+
+class Lab:
+    def __init__(self, model,num_epochs,samples):
+        """
+        used in the training loop to record all the weights.  this will do differencing and visualizations
+        """
+        self.LabParams = {} #holds pretty much everything
+        self.LayerNames = []
         
+        weight_layers = sum(1 for i in model.named_parameters())
+        #self.LabParams = [0]*weight_layers # a list containing the weight tensors
+        self.LayerNames = ['']*weight_layers
+        ep_list = [num_epochs* samples]
+
+        for idx,t in enumerate(model.named_parameters()):
+            name = t[0]
+            layer_shape = ep_list + list(t[1].shape) #the shape the lab param should have for each weight matrix
+            self.LabParams[name] = torch.zeros(layer_shape)
+            self.LayerNames[idx] = name
+        
+        
+    def record(self, model,epoch,data_samples,sample):
+        #this has to know which weight layer it is.  i think its always the same order?
+        idx = 0
+        for i in model.named_parameters():
+            #assert i[0] == self.LabParams[idx][0] 
+            self.LabParams[i[0]][epoch * data_samples + sample] = i[1]
+            idx +=1
+    def graph(self,layers_to_graph = None, graph_together = False, diff = False):
+        
+        if layers_to_graph is None:
+            layers_to_graph = self.LayerNames
+
+        if graph_together:
+            fig, ax = plt.subplots()
+
+        for layer_name in layers_to_graph:
+        #layer_name = 'hidden_1.weight'
+
+
+            weights = self.LabParams[layer_name].detach().numpy()
+            shapes =  (weights.shape[0], np.prod(weights.shape[1:])) #flattens all but first (time step)
+            weights = weights.reshape(shapes)
+            
+            if diff:
+                weights = np.diff(weights, axis=0)
+                shapes = weights.shape
+            num_time_steps, num_dimensions = weights.shape
+
+            if not graph_together:
+                fig, ax = plt.subplots()
+
+            for i in range(num_dimensions):
+                ax.plot(range(num_time_steps), weights[:, i], label=f"Dimension {i+1}")
+
+
+            ax.set_xlabel('Time Step')
+            ax.set_ylabel('Weight Value')
+            ax.set_title(layer_name)
+            if not graph_together:
+                plt.show()
+
+        if graph_together:
+            plt.show()
+    
+
