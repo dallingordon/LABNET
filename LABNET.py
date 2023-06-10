@@ -195,7 +195,7 @@ class Lab:
             #assert i[0] == self.LabParams[idx][0] 
             self.LabParams[i[0]][epoch * data_samples + sample] = i[1]
             idx +=1
-    def graph(self,layers_to_graph = None, graph_together = False, diff = False):
+    def graph(self,layers_to_graph = None, graph_together = False, diff = 0):
         
         if layers_to_graph is None:
             layers_to_graph = self.LayerNames
@@ -211,9 +211,11 @@ class Lab:
             shapes =  (weights.shape[0], np.prod(weights.shape[1:])) #flattens all but first (time step)
             weights = weights.reshape(shapes)
             
-            if diff:
+            for i in range(diff): ##this diffs to the derivative you want.  1 is first, 2 2nd, etc.
                 weights = np.diff(weights, axis=0)
-                shapes = weights.shape
+                
+                #shapes = weights.shape
+                
             num_time_steps, num_dimensions = weights.shape
 
             if not graph_together:
@@ -231,5 +233,6 @@ class Lab:
 
         if graph_together:
             plt.show()
+         
     
 
