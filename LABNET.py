@@ -1,6 +1,97 @@
 import torch
 import matplotlib.pyplot as plt
 import numpy as np
+from torch.distributions import uniform, normal
+import torch.nn.init as init
+import torch.nn as nn
+import torch.optim as optim
+
+
+class Teacher:
+
+    def __init__(self,layer_sizes):
+        
+        # Extract the number of inputs and outputs from the layer_sizes list
+        num_inputs = layer_sizes[0]
+        num_outputs = layer_sizes[-1]
+        
+        self.model = nn.Sequential()
+        self.inputs = torch.tensor([])
+        self.targets = torch.tensor([])
+
+        # Add input layer
+        self.model.add_module("input_layer", nn.Linear(num_inputs, layer_sizes[1]))
+        self.model.add_module("input_layer_activation", nn.ReLU())
+
+        # Add hidden layers
+        for i in range(2, len(layer_sizes)-1):
+            self.model.add_module(f"hidden_layer_{i}", nn.Linear(layer_sizes[i-1], layer_sizes[i]))
+            self.model.add_module(f"hidden_layer_{i}_activation", nn.ReLU())
+
+        # Add output layer
+        self.model.add_module("output_layer", nn.Linear(layer_sizes[-2], num_outputs))
+
+
+
+
+    #this would be theoretical perfect dark knowledge
+    def generate_data(self
+                      , n = 1000
+                      , dist_type = 'normal'
+                      ,  m =0.0
+                      , std=1.0
+                      , gen_lr = 0.01
+                      , gen_epochs = 1000
+                      , gen_init_range = (-1,1)
+                     ):
+
+        low,high = gen_init_range
+
+        #initialize teh teacher weights
+        for module in self.model.modules():
+            if isinstance(module, nn.Linear):
+                init.uniform_(module.weight, low, high)
+                if module.bias is not None:
+                    init.uniform_(module.bias, low, high)
+
+        input_size = self.model.input_layer.in_features ##this only works with create_neural_network func above
+        output_size = self.model.output_layer.out_features
+
+        if dist_type == 'normal':
+            samples = np.random.normal(m, std, (n,input_size))
+        elif dist_type == 'uniform':
+            samples = np.random.uniform(m, std, (n,input_size))
+        else:
+            raise ValueError('dist_type muste be either normal or uniform')
+
+        samples = torch.from_numpy(samples).float()
+        
+        out_temp = np.random.normal(m, std, (n,output_size))
+        out_temp = torch.from_numpy(out_temp).float()
+        ##train for a few epochs to get decent weights
+        ##random weights end up generating a lot of the same targets for random inputs.  its weird.  
+        ##talk to kulis about this 
+        criterion = nn.MSELoss()
+        optimizer = optim.SGD(self.model.parameters(), lr=gen_lr)
+        
+        # Training loop
+        for epoch in range(gen_epochs):
+            # Forward pass
+            outputs = self.model(samples)
+            loss = criterion(outputs, out_temp)
+
+            # Backward and optimize
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+
+
+        ##after its trained a bit, it uses those weights to make "perfect" outputs
+        outputs_return = self.model(samples)  
+        self.inputs = samples
+        self.targets = outputs_return.detach()
+    
 
 class Neuron:
     def __init__(self, neuron_type):
@@ -195,13 +286,21 @@ class Lab:
             #assert i[0] == self.LabParams[idx][0] 
             self.LabParams[i[0]][epoch * data_samples + sample] = i[1]
             idx +=1
-    def graph(self,layers_to_graph = None, graph_together = False, diff = False):
+    def graph(self
+              ,layers_to_graph = None
+              , graph_together = False
+              , diff = 0
+              ,plot_size = (10,6)
+              ,x_range = (None, None)
+              ,y_range = (None, None)
+             ):
         
         if layers_to_graph is None:
             layers_to_graph = self.LayerNames
 
         if graph_together:
-            fig, ax = plt.subplots()
+            fig, ax = plt.subplots(figsize=plot_size)
+            
 
         for layer_name in layers_to_graph:
         #layer_name = 'hidden_1.weight'
@@ -211,13 +310,15 @@ class Lab:
             shapes =  (weights.shape[0], np.prod(weights.shape[1:])) #flattens all but first (time step)
             weights = weights.reshape(shapes)
             
-            if diff:
+            for i in range(diff): ##this diffs to the derivative you want.  1 is first, 2 2nd, etc.
                 weights = np.diff(weights, axis=0)
-                shapes = weights.shape
+                
+                #shapes = weights.shape
+                
             num_time_steps, num_dimensions = weights.shape
 
             if not graph_together:
-                fig, ax = plt.subplots()
+                fig, ax = plt.subplots(figsize=plot_size)
 
             for i in range(num_dimensions):
                 ax.plot(range(num_time_steps), weights[:, i], label=f"Dimension {i+1}")
@@ -227,9 +328,20 @@ class Lab:
             ax.set_ylabel('Weight Value')
             ax.set_title(layer_name)
             if not graph_together:
+                if x_range[0] is not None and x_range[1] is not None:
+                    plt.xlim(x_range[0], x_range[1])
+                if y_range[0] is not None and y_range[1] is not None:
+                    plt.ylim(y_range[0], y_range[1])
+                
                 plt.show()
 
         if graph_together:
+            if x_range[0] is not None and x_range[1] is not None:
+                plt.xlim(x_range[0], x_range[1])
+            if y_range[0] is not None and y_range[1] is not None:
+                plt.ylim(y_range[0], y_range[1])
+            
             plt.show()
+         
     
 
