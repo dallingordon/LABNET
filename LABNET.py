@@ -6,6 +6,22 @@ import torch.nn.init as init
 import torch.nn as nn
 import torch.optim as optim
 
+import numpy as np
+from sklearn.metrics.pairwise import euclidean_distances, cosine_distances
+
+##This could maybe be a method of Lab?
+def compare_rows(tensor_a, tensor_b, dist='euclidean'):
+    if tensor_a.shape != tensor_b.shape:
+        raise ValueError("Input tensors must have the same shape.")
+    if dist == 'euclidean':
+        distances = euclidean_distances(tensor_a, tensor_b)
+    elif dist == 'cosine':
+        distances = cosine_distances(tensor_a, tensor_b)
+    else:
+        raise ValueError("Invalid distance metric. Please choose either 'euclidean' or 'cosine'.")
+
+    min_sum = np.sum(np.min(distances, axis=1))
+    return distances,min_sum
 
 class Teacher:
 
