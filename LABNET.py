@@ -24,16 +24,18 @@ def compare_rows(tensor_a, tensor_b, dist='euclidean'):
     return distances,min_sum
 
 class Teacher:
-
+    
     def __init__(self,layer_sizes):
         
         # Extract the number of inputs and outputs from the layer_sizes list
         num_inputs = layer_sizes[0]
         num_outputs = layer_sizes[-1]
-        
+        self.cofigured = False
         self.model = nn.Sequential()
-        self.inputs = torch.tensor([])
-        self.targets = torch.tensor([])
+        self.train_inputs = torch.tensor([])
+        self.train_targets = torch.tensor([])
+        self.val_inputs = torch.tensor([])
+        self.val_targets = torch.tensor([])
 
         # Add input layer
         self.model.add_module("input_layer", nn.Linear(num_inputs, layer_sizes[1]))
@@ -48,22 +50,18 @@ class Teacher:
         self.model.add_module("output_layer", nn.Linear(layer_sizes[-2], num_outputs))
 
 
-
-
-    #this would be theoretical perfect dark knowledge
-    def generate_data(self
-                      , n = 1000
-                      , dist_type = 'normal'
-                      ,  m =0.0
-                      , std=1.0
-                      , gen_lr = 0.01
-                      , gen_epochs = 1000
-                      , gen_init_range = (-1,1)
-                     ):
-
+    def configure(self
+                  , gen_lr = 0.01
+                  , gen_epochs = 1000
+                  , gen_init_range = (-1,1)
+                  , gen_n = 10_000
+                  , gen_m =0.0
+                  , gen_std=1.0
+                  , dist_type = 'normal'):
+        
         low,high = gen_init_range
-
-        #initialize teh teacher weights
+        
+        #initialize the teacher weights
         for module in self.model.modules():
             if isinstance(module, nn.Linear):
                 init.uniform_(module.weight, low, high)
@@ -72,17 +70,8 @@ class Teacher:
 
         input_size = self.model.input_layer.in_features ##this only works with create_neural_network func above
         output_size = self.model.output_layer.out_features
-
-        if dist_type == 'normal':
-            samples = np.random.normal(m, std, (n,input_size))
-        elif dist_type == 'uniform':
-            samples = np.random.uniform(m, std, (n,input_size))
-        else:
-            raise ValueError('dist_type muste be either normal or uniform')
-
-        samples = torch.from_numpy(samples).float()
         
-        out_temp = np.random.normal(m, std, (n,output_size))
+        out_temp = np.random.normal(gen_m, gen_std, (gen_n,output_size))
         out_temp = torch.from_numpy(out_temp).float()
         ##train for a few epochs to get decent weights
         ##random weights end up generating a lot of the same targets for random inputs.  its weird.  
@@ -90,6 +79,14 @@ class Teacher:
         criterion = nn.MSELoss()
         optimizer = optim.SGD(self.model.parameters(), lr=gen_lr)
         
+        if dist_type == 'normal':
+            samples = np.random.normal(gen_m, gen_std, (gen_n,input_size))
+        elif dist_type == 'uniform':
+            samples = np.random.uniform(gen_m, gen_std, (gen_n,input_size))
+        else:
+            raise ValueError('dist_type muste be either normal or uniform')
+
+        samples = torch.from_numpy(samples).float()
         # Training loop
         for epoch in range(gen_epochs):
             # Forward pass
@@ -100,14 +97,44 @@ class Teacher:
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+        #print("Teacher Configured, now you can generate data!")
+        self.cofigured = True
 
+    #this would be theoretical perfect dark knowledge
+    def generate_data(self
+                      , val_train = "train"
+                      , n = 1000
+                      , dist_type = 'normal'
+                      , m =0.0
+                      , std=1.0
+                     ):
+        if val_train not in ["train","val"]:
+            raise RuntimeError("please specify val_train = 'train' or 'val'.")
 
+        if not self.cofigured:
+            raise RuntimeError("Teacher is not configured. Run the configure() method of your teacher object before generating noise to distill with.")
+        input_size = self.model.input_layer.in_features ##this only works with create_neural_network func above
+        output_size = self.model.output_layer.out_features 
+        
+        if dist_type == 'normal':
+            samples = np.random.normal(m, std, (n,input_size))
+        elif dist_type == 'uniform':
+            samples = np.random.uniform(m, std, (n,input_size))
+        else:
+            raise ValueError('dist_type muste be either normal or uniform')
+
+        samples = torch.from_numpy(samples).float()
 
         ##after its trained a bit, it uses those weights to make "perfect" outputs
         outputs_return = self.model(samples)  
-        self.inputs = samples
-        self.targets = outputs_return.detach()
+        
+        if val_train == "train":
+            self.train_inputs = samples #right now it is made to overwrite.  i could append?
+            self.train_targets = outputs_return.detach() 
     
+        if val_train == "val":
+            self.val_inputs = samples #right now it is made to overwrite.  i could append?
+            self.val_targets = outputs_return.detach() 
 
 class Neuron:
     def __init__(self, neuron_type):
