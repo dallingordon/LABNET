@@ -28,26 +28,27 @@ class Teacher:
     def __init__(self,layer_sizes):
         
         # Extract the number of inputs and outputs from the layer_sizes list
-        num_inputs = layer_sizes[0]
-        num_outputs = layer_sizes[-1]
-        self.cofigured = False
-        self.model = nn.Sequential()
-        self.train_inputs = torch.tensor([])
-        self.train_targets = torch.tensor([])
-        self.val_inputs = torch.tensor([])
-        self.val_targets = torch.tensor([])
+        if isinstance(layer_sizes, list):
+            num_inputs = layer_sizes[0]
+            num_outputs = layer_sizes[-1]
+            self.cofigured = False
+            self.model = nn.Sequential()
+            self.train_inputs = torch.tensor([])
+            self.train_targets = torch.tensor([])
+            self.val_inputs = torch.tensor([])
+            self.val_targets = torch.tensor([])
 
-        # Add input layer
-        self.model.add_module("input_layer", nn.Linear(num_inputs, layer_sizes[1]))
-        self.model.add_module("input_layer_activation", nn.ReLU())
+            # Add input layer
+            self.model.add_module("input_layer", nn.Linear(num_inputs, layer_sizes[1]))
+            self.model.add_module("input_layer_activation", nn.ReLU())
 
-        # Add hidden layers
-        for i in range(2, len(layer_sizes)-1):
-            self.model.add_module(f"hidden_layer_{i}", nn.Linear(layer_sizes[i-1], layer_sizes[i]))
-            self.model.add_module(f"hidden_layer_{i}_activation", nn.ReLU())
+            # Add hidden layers
+            for i in range(2, len(layer_sizes)-1):
+                self.model.add_module(f"hidden_layer_{i}", nn.Linear(layer_sizes[i-1], layer_sizes[i]))
+                self.model.add_module(f"hidden_layer_{i}_activation", nn.ReLU())
 
-        # Add output layer
-        self.model.add_module("output_layer", nn.Linear(layer_sizes[-2], num_outputs))
+            # Add output layer
+            self.model.add_module("output_layer", nn.Linear(layer_sizes[-2], num_outputs))
 
 
     def configure(self
