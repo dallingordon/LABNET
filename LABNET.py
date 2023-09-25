@@ -25,18 +25,34 @@ def compare_rows(tensor_a, tensor_b, dist='euclidean'):
 
 class Teacher:
     
-    def __init__(self,layer_sizes):
+    def __init__(self,layer_sizes,input_shape = None):
+            
+            
+        self.cofigured = False
+        self.input_shape = None
+        self.train_inputs = torch.tensor([])
+        self.train_targets = torch.tensor([])
+        self.val_inputs = torch.tensor([])
+        self.val_targets = torch.tensor([])
+        self.list_config = False #true uses list config, not model config
         
-        # Extract the number of inputs and outputs from the layer_sizes list
+        if isinstance(layer_sizes,nn.Module):
+            if input_shape is None:
+                raise ValueError('when initializing with a model include the input_shape as the second parameter')
+            else:
+                if isinstance(input_shape,tuple):
+                    self.input_shape = input_shape
+                else: 
+                    raise ValueError('input_shape must be a tuple')
+            self.model = layer_sizes
+            
+        
         if isinstance(layer_sizes, list):
+            self.list_config = True
             num_inputs = layer_sizes[0]
             num_outputs = layer_sizes[-1]
-            self.cofigured = False
             self.model = nn.Sequential()
-            self.train_inputs = torch.tensor([])
-            self.train_targets = torch.tensor([])
-            self.val_inputs = torch.tensor([])
-            self.val_targets = torch.tensor([])
+            
 
             # Add input layer
             self.model.add_module("input_layer", nn.Linear(num_inputs, layer_sizes[1]))
@@ -68,22 +84,30 @@ class Teacher:
                 init.uniform_(module.weight, low, high)
                 if module.bias is not None:
                     init.uniform_(module.bias, low, high)
-
-        input_size = self.model.input_layer.in_features ##this only works with create_neural_network func above
-        output_size = self.model.output_layer.out_features
         
-        out_temp = np.random.normal(gen_m, gen_std, (gen_n,output_size))
-        out_temp = torch.from_numpy(out_temp).float()
-        ##train for a few epochs to get decent weights
-        ##random weights end up generating a lot of the same targets for random inputs.  its weird.  
-        ##talk to kulis about this 
+        
+        
+        if self.list_config:
+            input_size = self.model.input_layer.in_features ##this only works with create_neural_network func above
+            output_size = self.model.output_layer.out_features
+
+            out_temp = np.random.normal(gen_m, gen_std, (gen_n,output_size))
+            out_temp = torch.from_numpy(out_temp).float()
+            
+            gen_shape = (gen_n,input_size)
+        
+        else:
+            gen_shape = (gen_n,) + self.input_shape
+            ##i need an output size as well! dg start here
         criterion = nn.MSELoss()
         optimizer = optim.SGD(self.model.parameters(), lr=gen_lr)
         
+       
+        
         if dist_type == 'normal':
-            samples = np.random.normal(gen_m, gen_std, (gen_n,input_size))
+            samples = np.random.normal(gen_m, gen_std, gen_shape)
         elif dist_type == 'uniform':
-            samples = np.random.uniform(gen_m, gen_std, (gen_n,input_size))
+            samples = np.random.uniform(gen_m, gen_std, gen_shape)
         else:
             raise ValueError('dist_type muste be either normal or uniform')
 
@@ -114,6 +138,7 @@ class Teacher:
 
         if not self.cofigured:
             raise RuntimeError("Teacher is not configured. Run the configure() method of your teacher object before generating noise to distill with.")
+        
         input_size = self.model.input_layer.in_features ##this only works with create_neural_network func above
         output_size = self.model.output_layer.out_features 
         
