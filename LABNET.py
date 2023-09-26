@@ -30,6 +30,7 @@ class Teacher:
             
         self.cofigured = False
         self.input_shape = None
+        self.output_shape = None
         self.train_inputs = torch.tensor([])
         self.train_targets = torch.tensor([])
         self.val_inputs = torch.tensor([])
@@ -78,7 +79,7 @@ class Teacher:
         
         low,high = gen_init_range
         
-        #initialize the teacher weights
+        #initialize the teacher weights, does all uniform rn.  
         for module in self.model.modules():
             if isinstance(module, nn.Linear):
                 init.uniform_(module.weight, low, high)
@@ -88,28 +89,36 @@ class Teacher:
         
         
         if self.list_config:
-            input_size = self.model.input_layer.in_features ##this only works with create_neural_network func above
-            output_size = self.model.output_layer.out_features
-
-            out_temp = np.random.normal(gen_m, gen_std, (gen_n,output_size))
-            out_temp = torch.from_numpy(out_temp).float()
-            
-            gen_shape = (gen_n,input_size)
-        
+            self.input_shape = tuple([self.model.input_layer.in_features]) ##this only works with create_neural_network func above
+            self.output_shape = tuple([self.model.output_layer.out_features])
         else:
-            gen_shape = (gen_n,) + self.input_shape
+            #this is to get shapes for model init
+            dummy_shape = (1,) + self.input_shape
+            dummy_in = torch.ones(dummy_shape)
+            dummy_out = self.model(dummy_in)
+            self.output_shape = tuple(dummy_out.shape[1:]) # don't need the one batch, tack it on out of the if
+                                   
+        gen_shape = (gen_n,) + self.input_shape  
+        gen_out_shape = (gen_n,) + self.output_shape
+
+        out_temp = np.random.normal(gen_m, gen_std, gen_out_shape)
+        out_temp = torch.from_numpy(out_temp).float()
+        
+        
+            
             ##i need an output size as well! dg start here
+            
         criterion = nn.MSELoss()
         optimizer = optim.SGD(self.model.parameters(), lr=gen_lr)
         
        
-        
+        #make temporary input data for getting good teacher weights.
         if dist_type == 'normal':
             samples = np.random.normal(gen_m, gen_std, gen_shape)
         elif dist_type == 'uniform':
             samples = np.random.uniform(gen_m, gen_std, gen_shape)
         else:
-            raise ValueError('dist_type muste be either normal or uniform')
+            raise ValueError('dist_type must be be either normal or uniform')
 
         samples = torch.from_numpy(samples).float()
         # Training loop
@@ -137,15 +146,17 @@ class Teacher:
             raise RuntimeError("please specify val_train = 'train' or 'val'.")
 
         if not self.cofigured:
-            raise RuntimeError("Teacher is not configured. Run the configure() method of your teacher object before generating noise to distill with.")
+            #if it is configured, we have self.input_shape and self.output shape
+            raise RuntimeError("Teacher is not configured. Run the configure() method of your teacher object before generating.")
         
-        input_size = self.model.input_layer.in_features ##this only works with create_neural_network func above
-        output_size = self.model.output_layer.out_features 
+        input_size = self.input_shape ##this only works with create_neural_network func above
+        #output_size = self.output_shape un used
+        gen_shape = (n,) + input_size
         
         if dist_type == 'normal':
-            samples = np.random.normal(m, std, (n,input_size))
+            samples = np.random.normal(m, std, gen_shape)
         elif dist_type == 'uniform':
-            samples = np.random.uniform(m, std, (n,input_size))
+            samples = np.random.uniform(m, std, gen_shape)
         else:
             raise ValueError('dist_type muste be either normal or uniform')
 
