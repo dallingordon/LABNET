@@ -95,7 +95,14 @@ class Teacher:
             #this is to get shapes for model init
             dummy_shape = (1,) + self.input_shape
             dummy_in = torch.ones(dummy_shape)
-            dummy_out = self.model(dummy_in)
+            try:
+                dummy_out = self.model(dummy_in)
+            except Exception as e:
+                print(e)
+                print("lets try ints!")
+                dummy_in = torch.randint(low=0, high=256, size=dummy_shape)
+                dummy_out = self.model(dummy_in)
+            
             self.output_shape = tuple(dummy_out.shape[1:]) # don't need the one batch, tack it on out of the if
                                    
         gen_shape = (gen_n,) + self.input_shape  
@@ -115,12 +122,16 @@ class Teacher:
         #make temporary input data for getting good teacher weights.
         if dist_type == 'normal':
             samples = np.random.normal(gen_m, gen_std, gen_shape)
+            samples = torch.from_numpy(samples).float()
         elif dist_type == 'uniform':
             samples = np.random.uniform(gen_m, gen_std, gen_shape)
+            samples = torch.from_numpy(samples).float()
+        elif dist_type == "ints":
+            samples = torch.from_numpy(np.random.randint(0, high=gen_m, size=gen_shape))
         else:
-            raise ValueError('dist_type must be be either normal or uniform')
+            raise ValueError('dist_type must be normal,uniform,or ints.')
 
-        samples = torch.from_numpy(samples).float()
+        
         # Training loop
         for epoch in range(gen_epochs):
             # Forward pass
@@ -131,6 +142,7 @@ class Teacher:
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+            #####add a progress bar! https://chat.openai.com/c/385d20e0-ebcd-4894-a356-7c6fd5c80913
         #print("Teacher Configured, now you can generate data!")
         self.cofigured = True
 
