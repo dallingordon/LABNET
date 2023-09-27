@@ -5,6 +5,7 @@ from torch.distributions import uniform, normal
 import torch.nn.init as init
 import torch.nn as nn
 import torch.optim as optim
+from tqdm import tqdm
 
 import numpy as np
 from sklearn.metrics.pairwise import euclidean_distances, cosine_distances
@@ -23,6 +24,14 @@ def compare_rows(tensor_a, tensor_b, dist='euclidean'):
     min_sum = np.sum(np.min(distances, axis=1))
     return distances,min_sum
 
+def one_hot_last_dim(tensor_shape):
+    num_classes = tensor_shape[-1]
+    random_idx = np.random.randint(1, num_classes + 1, size=tensor_shape[:-1])
+    zero_tensor = np.zeros(tensor_shape, dtype=int)
+    last_dim_indices = np.arange(num_classes)
+    zero_tensor[..., :, last_dim_indices] = (random_idx[..., np.newaxis] == last_dim_indices)
+    return zero_tensor
+
 class Teacher:
     
     def __init__(self,layer_sizes,input_shape = None):
@@ -35,7 +44,7 @@ class Teacher:
         self.train_targets = torch.tensor([])
         self.val_inputs = torch.tensor([])
         self.val_targets = torch.tensor([])
-        self.list_config = False #true uses list config, not model config
+        self.list_config = None #true uses list config, not model config
         
         if isinstance(layer_sizes,nn.Module):
             if input_shape is None:
@@ -68,6 +77,7 @@ class Teacher:
             self.model.add_module("output_layer", nn.Linear(layer_sizes[-2], num_outputs))
 
 
+    
     def configure(self
                   , gen_lr = 0.01
                   , gen_epochs = 1000
@@ -75,6 +85,7 @@ class Teacher:
                   , gen_n = 10_000
                   , gen_m =0.0
                   , gen_std=1.0
+                  , out_type = None
                   , dist_type = 'normal'):
         
         low,high = gen_init_range
@@ -100,15 +111,19 @@ class Teacher:
             except Exception as e:
                 print(e)
                 print("lets try ints!")
-                dummy_in = torch.randint(low=0, high=256, size=dummy_shape)
+                dummy_in = torch.randint(low=0, high=gen_m, size=dummy_shape)
                 dummy_out = self.model(dummy_in)
             
             self.output_shape = tuple(dummy_out.shape[1:]) # don't need the one batch, tack it on out of the if
                                    
         gen_shape = (gen_n,) + self.input_shape  
         gen_out_shape = (gen_n,) + self.output_shape
-
-        out_temp = np.random.normal(gen_m, gen_std, gen_out_shape)
+        
+        if out_type == "one-hot":
+            out_temp = one_hot_last_dim(gen_out_shape)
+        else:
+            out_temp = np.random.normal(gen_m, gen_std, gen_out_shape)
+            
         out_temp = torch.from_numpy(out_temp).float()
         
         
@@ -133,6 +148,8 @@ class Teacher:
 
         
         # Training loop
+        progress_bar = tqdm(total=gen_epochs, desc="Configuring Teacher:") #might add an option to silence this later
+        #this needs to be batched i think.
         for epoch in range(gen_epochs):
             # Forward pass
             outputs = self.model(samples)
@@ -142,10 +159,12 @@ class Teacher:
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+            progress_bar.update(1)
             #####add a progress bar! https://chat.openai.com/c/385d20e0-ebcd-4894-a356-7c6fd5c80913
         #print("Teacher Configured, now you can generate data!")
         self.cofigured = True
-
+        progress_bar.close()
+        print("Teacher Configured")
     #this would be theoretical perfect dark knowledge
     def generate_data(self
                       , val_train = "train"
@@ -167,12 +186,16 @@ class Teacher:
         
         if dist_type == 'normal':
             samples = np.random.normal(m, std, gen_shape)
+            samples = torch.from_numpy(samples).float()
         elif dist_type == 'uniform':
             samples = np.random.uniform(m, std, gen_shape)
+            samples = torch.from_numpy(samples).float()
+        elif dist_type == "ints":
+            samples = np.random.randint(0, high=m, size=gen_shape)
+            samples = torch.from_numpy(samples)
         else:
-            raise ValueError('dist_type muste be either normal or uniform')
+            raise ValueError('dist_type must be normal,uniform,or ints.')
 
-        samples = torch.from_numpy(samples).float()
 
         ##after its trained a bit, it uses those weights to make "perfect" outputs
         outputs_return = self.model(samples)  
