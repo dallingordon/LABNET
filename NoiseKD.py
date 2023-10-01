@@ -6,6 +6,7 @@ import torch.nn.init as init
 import torch.nn as nn
 import torch.optim as optim
 from tqdm import tqdm
+from torch.utils.data import DataLoader, TensorDataset
 
 import numpy as np
 from sklearn.metrics.pairwise import euclidean_distances, cosine_distances
@@ -86,6 +87,7 @@ class Teacher:
                   , gen_m =0.0
                   , gen_std=1.0
                   , out_type = None
+                  , batch_size = 50
                   , dist_type = 'normal'):
         
         low,high = gen_init_range
@@ -145,21 +147,27 @@ class Teacher:
             samples = torch.from_numpy(np.random.randint(0, high=gen_m, size=gen_shape))
         else:
             raise ValueError('dist_type must be normal,uniform,or ints.')
-
         
-        # Training loop
-        progress_bar = tqdm(total=gen_epochs, desc="Configuring Teacher:") #might add an option to silence this later
-        #this needs to be batched i think.
-        for epoch in range(gen_epochs):
-            # Forward pass
-            outputs = self.model(samples)
-            loss = criterion(outputs, out_temp)
+        
 
-            # Backward and optimize
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+        dataset = TensorDataset(samples, out_temp)
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+
+        progress_bar = tqdm(total=gen_epochs, desc="Configuring Teacher:")
+
+        for epoch in range(gen_epochs):
+            for batch_samples, batch_out_temp in dataloader:
+                # Forward pass
+                outputs = self.model(batch_samples)
+                loss = criterion(outputs, batch_out_temp)
+
+                # Backward and optimize
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
             progress_bar.update(1)
+
             #####add a progress bar! https://chat.openai.com/c/385d20e0-ebcd-4894-a356-7c6fd5c80913
         #print("Teacher Configured, now you can generate data!")
         self.cofigured = True
@@ -171,6 +179,7 @@ class Teacher:
                       , n = 1000
                       , dist_type = 'normal'
                       , m =0.0
+                      , batch_size = 50
                       , std=1.0
                      ):
         if val_train not in ["train","val"]:
@@ -196,8 +205,9 @@ class Teacher:
         else:
             raise ValueError('dist_type must be normal,uniform,or ints.')
 
-
+        
         ##after its trained a bit, it uses those weights to make "perfect" outputs
+        ####START HERE. need to make this batched
         outputs_return = self.model(samples)  
         
         if val_train == "train":
