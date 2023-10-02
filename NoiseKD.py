@@ -7,6 +7,9 @@ import torch.nn as nn
 import torch.optim as optim
 from tqdm import tqdm
 from torch.utils.data import DataLoader, TensorDataset
+import random
+
+
 
 import numpy as np
 from sklearn.metrics.pairwise import euclidean_distances, cosine_distances
@@ -88,6 +91,7 @@ class Teacher:
                   , gen_std=1.0
                   , out_type = None
                   , batch_size = 50
+                  , random_shuffle = 0.5
                   , dist_type = 'normal'):
         
         low,high = gen_init_range
@@ -127,7 +131,7 @@ class Teacher:
             out_temp = np.random.normal(gen_m, gen_std, gen_out_shape)
             
         out_temp = torch.from_numpy(out_temp).float()
-        
+        self.out_temp = out_temp
         
             
             ##i need an output size as well! dg start here
@@ -157,7 +161,13 @@ class Teacher:
 
         for epoch in range(gen_epochs):
             for batch_samples, batch_out_temp in dataloader:
-                # Forward pass
+                
+                #this is an attempt to have more balanced outputs from my fake model
+                random_number = random.random()
+                if random_number > random_shuffle:
+                    batch_out_temp = np.take(batch_out_temp, np.random.permutation(batch_out_temp.shape[0]), axis=0)
+                
+                
                 outputs = self.model(batch_samples)
                 loss = criterion(outputs, batch_out_temp)
 
@@ -165,7 +175,6 @@ class Teacher:
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
-
             progress_bar.update(1)
 
             #####add a progress bar! https://chat.openai.com/c/385d20e0-ebcd-4894-a356-7c6fd5c80913
@@ -207,13 +216,26 @@ class Teacher:
 
         
         ##after its trained a bit, it uses those weights to make "perfect" outputs
-        ####START HERE. need to make this batched
-        outputs_return = self.model(samples)  
+        data_loader = DataLoader(TensorDataset(samples), batch_size=batch_size, shuffle=False)
+
+        outputs_list = []
         
+        total_batches = len(data_loader)
+        progress_bar = tqdm(total=total_batches, desc="Configuring Teacher:")
+
+        for batch_samples in data_loader:
+            # Perform inference on each batch
+            batch_outputs = self.model(batch_samples[0])  # Assuming samples are in the first element of the batch
+            outputs_list.append(batch_outputs.detach())
+            progress_bar.update(1)
+        
+        # Stack the outputs along the batch dimension
+        outputs_return = torch.cat(outputs_list, dim=0)
+
         if val_train == "train":
-            self.train_inputs = samples #right now it is made to overwrite.  i could append?
-            self.train_targets = outputs_return.detach() 
-    
+            self.train_inputs = samples  # Set your train inputs as needed
+            self.train_targets = outputs_return
+
         if val_train == "val":
-            self.val_inputs = samples #right now it is made to overwrite.  i could append?
-            self.val_targets = outputs_return.detach() 
+            self.val_inputs = samples  # Set your val inputs as needed
+            self.val_targets = outputs_return 
