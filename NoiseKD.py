@@ -8,11 +8,79 @@ import torch.optim as optim
 from tqdm import tqdm
 from torch.utils.data import DataLoader, TensorDataset
 import random
+import torch.nn.functional as F
 
 
 
 import numpy as np
 from sklearn.metrics.pairwise import euclidean_distances, cosine_distances
+
+slm_init_config = {"embedding_dim" : 16
+                    ,"num_heads" : 8
+                    ,"hidden_dim"  : 11
+                    ,"num_layers" : 2
+                    ,"dropout" : 0.1
+                    ,"vocab_size" : 80
+                    ,"class_num" : 80
+                    ,"sequence_length" : 160}
+
+slm_model_config = {"dist_type" : "ints" ##lower was worse.  raise it. 0.003 looks great.  this is the best.
+                      , "gen_m" : 80 #should be class_num, vocab_size
+                      , "gen_n" : 2000
+                      , "gen_epochs" : 50
+                      , "gen_lr" :  0.003 ##0.003
+                      , "random_shuffle" : 0.8
+                      , "out_type" : "one-hot" }
+
+class TransformerEncoder(nn.Module):
+    def __init__(self, embedding_dim, num_heads, hidden_dim, num_layers, dropout):
+        super(TransformerEncoder, self).__init__()
+        self.transformer = nn.TransformerEncoder(
+            nn.TransformerEncoderLayer(embedding_dim, num_heads, hidden_dim, dropout),
+            num_layers
+        )
+
+    def forward(self, x):
+        return self.transformer(x)
+
+class SimpleLanguageModel(nn.Module):
+    def __init__(self, vocab_size, sequence_length, embedding_dim, class_num, num_heads, hidden_dim, num_layers, dropout):
+        super(SimpleLanguageModel, self).__init__()
+        self.sequence_length = sequence_length
+        self.embedding_dim = embedding_dim
+        # Define the embedding layer
+        self.embedding = nn.Embedding(vocab_size, embedding_dim)
+        
+        # Define the transformer encoder
+        self.transformer_encoder = TransformerEncoder(embedding_dim, num_heads, hidden_dim, num_layers, dropout)
+        
+        self.fc1 = nn.Linear(sequence_length*embedding_dim, 1000)
+        self.fc2 = nn.Linear(1000, 500)
+        
+        self.output_layer = nn.Linear(500, class_num)
+        
+        
+
+    def forward(self, input_data):
+        # Input_data is of shape (batch_size, sequence_length)
+        # Apply embedding layer
+        #print(input_data.shape)
+        embedded = self.embedding(input_data)
+        #print(embedded.shape)
+        # Pass through the transformer encoder
+        transformed = self.transformer_encoder(embedded)
+        #print(transformed.shape) same as input duh: batch x sequence_length x embedding_dim
+        flattened_tensor = transformed.view(-1,self.sequence_length*self.embedding_dim)
+        f1 = nn.ReLU()(self.fc1(flattened_tensor))
+        f2 = nn.ReLU()(self.fc2(f1))
+        out = self.output_layer(f2)
+        # Apply the output layer
+        output = F.softmax(out,dim=1)
+
+        return output
+    
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters())
 
 ##This could maybe be a method of Lab?
 def compare_rows(tensor_a, tensor_b, dist='euclidean'):
@@ -131,7 +199,7 @@ class Teacher:
             out_temp = np.random.normal(gen_m, gen_std, gen_out_shape)
             
         out_temp = torch.from_numpy(out_temp).float()
-        self.out_temp = out_temp
+        #self.out_temp = out_temp #this was just to debug, see the training config outputs
         
             
             ##i need an output size as well! dg start here
@@ -164,7 +232,7 @@ class Teacher:
                 
                 #this is an attempt to have more balanced outputs from my fake model
                 random_number = random.random()
-                if random_number > random_shuffle:
+                if random_number < random_shuffle: # this means higher r_s is more shuffling.  makes more sense imo
                     batch_out_temp = np.take(batch_out_temp, np.random.permutation(batch_out_temp.shape[0]), axis=0)
                 
                 
