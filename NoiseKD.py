@@ -289,7 +289,7 @@ class Teacher:
         outputs_list = []
         
         total_batches = len(data_loader)
-        progress_bar = tqdm(total=total_batches, desc="Configuring Teacher:")
+        progress_bar = tqdm(total=total_batches, desc=f"Generating {val_train} data :")
 
         for batch_samples in data_loader:
             # Perform inference on each batch
