@@ -258,6 +258,7 @@ class Teacher:
                       , m =0.0
                       , batch_size = 50
                       , std=1.0
+                      , display_progress = True
                      ):
         if val_train not in ["train","val"]:
             raise RuntimeError("please specify val_train = 'train' or 'val'.")
@@ -289,13 +290,16 @@ class Teacher:
         outputs_list = []
         
         total_batches = len(data_loader)
-        progress_bar = tqdm(total=total_batches, desc=f"Generating {val_train} data :")
+        
+        if display_progress:
+            progress_bar = tqdm(total=total_batches, desc=f"Generating {val_train} data :")
 
         for batch_samples in data_loader:
             # Perform inference on each batch
             batch_outputs = self.model(batch_samples[0])  # Assuming samples are in the first element of the batch
             outputs_list.append(batch_outputs.detach())
-            progress_bar.update(1)
+            if display_progress:
+                progress_bar.update(1)
         
         # Stack the outputs along the batch dimension
         outputs_return = torch.cat(outputs_list, dim=0)
