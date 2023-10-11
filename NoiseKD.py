@@ -9,7 +9,7 @@ from tqdm import tqdm
 from torch.utils.data import DataLoader, TensorDataset
 import random
 import torch.nn.functional as F
-
+import torch.distributions as dist
 
 
 import numpy as np
@@ -31,6 +31,18 @@ slm_model_config = {"dist_type" : "ints" ##lower was worse.  raise it. 0.003 loo
                       , "gen_lr" :  0.003 ##0.003
                       , "random_shuffle" : 0.8
                       , "out_type" : "one-hot" }
+
+def generate_heteroskedastic_ints(shape, alpha, beta, total_classes):
+    # Generate random values from the beta distribution
+    values = np.random.beta(alpha, beta, shape)
+    
+    # Scale the values to integers in the desired range (e.g., 0 to 100)
+    min_value = 0
+    max_value = total_classes
+    scaled_values = min_value + (max_value - min_value) * values
+    ints = np.round(scaled_values).astype(int)
+    
+    return ints
 
 class TransformerEncoder(nn.Module):
     def __init__(self, embedding_dim, num_heads, hidden_dim, num_layers, dropout):
@@ -160,7 +172,10 @@ class Teacher:
                   , out_type = None
                   , batch_size = 50
                   , random_shuffle = 0.5
-                  , dist_type = 'normal'):
+                  , dist_type = 'normal'
+                  , alpha = 1
+                  , beta = 1
+                 ):
         
         low,high = gen_init_range
         
@@ -216,9 +231,13 @@ class Teacher:
             samples = np.random.uniform(gen_m, gen_std, gen_shape)
             samples = torch.from_numpy(samples).float()
         elif dist_type == "ints":
-            samples = torch.from_numpy(np.random.randint(0, high=gen_m, size=gen_shape))
+            samples = np.random.randint(0, high=gen_m, size=gen_shape)
+            samples = torch.from_numpy(samples)
+        elif dist_type == "hetero":
+            samples = generate_heteroskedastic_ints(gen_shape, alpha, beta,gen_m-1)
+            samples = torch.from_numpy(samples)
         else:
-            raise ValueError('dist_type must be normal,uniform,or ints.')
+            raise ValueError('dist_type must be normal, uniform, hetero, or ints.')
         
         
 
@@ -259,6 +278,8 @@ class Teacher:
                       , batch_size = 50
                       , std=1.0
                       , display_progress = True
+                      , alpha = 1
+                      , beta = 1
                      ):
         if val_train not in ["train","val"]:
             raise RuntimeError("please specify val_train = 'train' or 'val'.")
@@ -280,8 +301,11 @@ class Teacher:
         elif dist_type == "ints":
             samples = np.random.randint(0, high=m, size=gen_shape)
             samples = torch.from_numpy(samples)
+        elif dist_type == "hetero":
+            samples = generate_heteroskedastic_ints(gen_shape, alpha, beta,m-1)
+            samples = torch.from_numpy(samples)
         else:
-            raise ValueError('dist_type must be normal,uniform,or ints.')
+            raise ValueError('dist_type must be normal, uniform, hetero, or ints.')
 
         
         ##after its trained a bit, it uses those weights to make "perfect" outputs
@@ -311,3 +335,30 @@ class Teacher:
         if val_train == "val":
             self.val_inputs = samples  # Set your val inputs as needed
             self.val_targets = outputs_return 
+    def graph_dataset_dist(self,val_train = 'val'):
+        if val_train not in ["train","val"]:
+            raise RuntimeError("please specify val_train = 'train' or 'val'.")
+
+        if not self.cofigured:
+            #if it is configured, we have self.input_shape and self.output shape
+            raise RuntimeError("Teacher is not configured. Run the configure() method of your teacher object before plotting.")
+        if val_train == "val":
+            if self.val_targets.shape == torch.Size([0]):
+                raise RuntimeError("There is no validation data to graph")
+            test = torch.argmax(self.val_targets,axis = -1)
+        else:
+            if self.train_targets.shape == torch.Size([0]):
+                raise RuntimeError("There is no training data to graph")
+            test = torch.argmax(self.train_targets,axis = -1)
+        class_num = self.output_shape[0]
+        class_counts = [np.count_nonzero(test == i) for i in range(1, class_num + 1)]
+
+        # Create a bar chart
+        plt.figure(figsize=(40, 10))
+        plt.bar(range(1, class_num + 1), class_counts, align='center')
+        plt.xlabel('Class')
+        plt.ylabel('Count')
+        plt.title('Bar Chart of Class Counts')
+        plt.xticks(range(1, class_num + 1))
+
+        plt.show()
