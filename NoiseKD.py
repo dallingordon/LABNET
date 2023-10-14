@@ -245,7 +245,7 @@ class Teacher:
         dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
         progress_bar = tqdm(total=gen_epochs, desc="Configuring Teacher:")
-
+        self.model.train()
         for epoch in range(gen_epochs):
             for batch_samples, batch_out_temp in dataloader:
                 
@@ -268,6 +268,7 @@ class Teacher:
         #print("Teacher Configured, now you can generate data!")
         self.cofigured = True
         progress_bar.close()
+        self.model.eval()
         print("Teacher Configured")
     #this would be theoretical perfect dark knowledge
     def generate_data(self
@@ -310,22 +311,26 @@ class Teacher:
         
         ##after its trained a bit, it uses those weights to make "perfect" outputs
         data_loader = DataLoader(TensorDataset(samples), batch_size=batch_size, shuffle=False)
-
+        self.data_loader = data_loader
         outputs_list = []
+        inputs_list = []
         
         total_batches = len(data_loader)
         
         if display_progress:
             progress_bar = tqdm(total=total_batches, desc=f"Generating {val_train} data :")
-
+        self.model.eval()
         for batch_samples in data_loader:
             # Perform inference on each batch
             batch_outputs = self.model(batch_samples[0])  # Assuming samples are in the first element of the batch
+            inputs_list.append(batch_samples[0].detach())
             outputs_list.append(batch_outputs.detach())
             if display_progress:
                 progress_bar.update(1)
         
         # Stack the outputs along the batch dimension
+        inputs_return = torch.cat(inputs_list, dim=0)
+        self.in_test = inputs_return
         outputs_return = torch.cat(outputs_list, dim=0)
 
         if val_train == "train":
