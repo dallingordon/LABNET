@@ -161,7 +161,23 @@ class Teacher:
             self.model.add_module("output_layer", nn.Linear(layer_sizes[-2], num_outputs))
 
 
-    
+    def load_state_dict(self,path):
+        self.model.load_state_dict(torch.load(path))
+        dummy_shape = (1,) + self.input_shape
+        dummy_in = torch.ones(dummy_shape)
+        try:
+            dummy_out = self.model(dummy_in)
+        except Exception as e:
+            print(e)
+            print("lets try ints!")
+            dummy_in = torch.randint(low=0, high=1, size=dummy_shape)
+            dummy_out = self.model(dummy_in)
+
+        self.output_shape = tuple(dummy_out.shape[1:]) # don't need the one batch, tack it on out of the if
+                                  
+        self.cofigured = True
+        self.model.eval()  
+        
     def configure(self
                   , gen_lr = 0.01
                   , gen_epochs = 1000
@@ -281,6 +297,7 @@ class Teacher:
                       , display_progress = True
                       , alpha = 1
                       , beta = 1
+                      , store_outputs = False
                      ):
         if val_train not in ["train","val"]:
             raise RuntimeError("please specify val_train = 'train' or 'val'.")
@@ -317,29 +334,36 @@ class Teacher:
         
         total_batches = len(data_loader)
         
-        if display_progress:
-            progress_bar = tqdm(total=total_batches, desc=f"Generating {val_train} data :")
-        self.model.eval()
-        for batch_samples in data_loader:
-            # Perform inference on each batch
-            batch_outputs = self.model(batch_samples[0])  # Assuming samples are in the first element of the batch
-            inputs_list.append(batch_samples[0].detach())
-            outputs_list.append(batch_outputs.detach())
+        if store_outputs:
             if display_progress:
-                progress_bar.update(1)
-        
-        # Stack the outputs along the batch dimension
-        inputs_return = torch.cat(inputs_list, dim=0)
-        self.in_test = inputs_return
-        outputs_return = torch.cat(outputs_list, dim=0)
+                progress_bar = tqdm(total=total_batches, desc=f"Generating {val_train} data :")
+            self.model.eval()
+
+
+            for batch_samples in data_loader:
+                # Perform inference on each batch
+                batch_outputs = self.model(batch_samples[0])  # Assuming samples are in the first element of the batch
+                inputs_list.append(batch_samples[0].detach())
+                outputs_list.append(batch_outputs.detach())
+                if display_progress:
+                    progress_bar.update(1)
+
+            # Stack the outputs along the batch dimension
+            inputs_return = torch.cat(inputs_list, dim=0)
+            self.in_test = inputs_return
+            outputs_return = torch.cat(outputs_list, dim=0)
 
         if val_train == "train":
             self.train_inputs = samples  # Set your train inputs as needed
-            self.train_targets = outputs_return
+            if store_outputs:
+                self.train_targets = outputs_return
 
         if val_train == "val":
             self.val_inputs = samples  # Set your val inputs as needed
-            self.val_targets = outputs_return 
+            if store_outputs:
+                self.val_targets = outputs_return 
+    
+    
     def graph_dataset_dist(self,val_train = 'val'):
         if val_train not in ["train","val"]:
             raise RuntimeError("please specify val_train = 'train' or 'val'.")
