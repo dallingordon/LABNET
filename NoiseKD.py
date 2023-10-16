@@ -343,14 +343,14 @@ class Teacher:
             for batch_samples in data_loader:
                 # Perform inference on each batch
                 batch_outputs = self.model(batch_samples[0])  # Assuming samples are in the first element of the batch
-                inputs_list.append(batch_samples[0].detach())
+                #inputs_list.append(batch_samples[0].detach())
                 outputs_list.append(batch_outputs.detach())
                 if display_progress:
                     progress_bar.update(1)
 
             # Stack the outputs along the batch dimension
-            inputs_return = torch.cat(inputs_list, dim=0)
-            self.in_test = inputs_return
+            #inputs_return = torch.cat(inputs_list, dim=0)
+            # self.in_test = inputs_return
             outputs_return = torch.cat(outputs_list, dim=0)
 
         if val_train == "train":
