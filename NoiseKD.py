@@ -55,6 +55,27 @@ class TransformerEncoder(nn.Module):
     def forward(self, x):
         return self.transformer(x)
 
+class ToyTransformer(nn.Module):
+    def __init__(self, vocab_size, embedding_dim, num_heads, hidden_dim, num_layers, dropout,sequence_length):
+        super(ToyTransformer, self).__init__()
+
+        self.embedding = nn.Embedding(vocab_size, embedding_dim)
+        self.transformer_encoder = nn.TransformerEncoder(
+            nn.TransformerEncoderLayer(embedding_dim, num_heads, hidden_dim, dropout, batch_first=True),
+            num_layers
+        )
+        self.fc1 = nn.Linear(embedding_dim * sequence_length, vocab_size)  # Intermediate linear layer
+        self.fc2 = nn.Linear(vocab_size, vocab_size)  # Final linear layer
+
+    def forward(self, x):
+        x = self.embedding(x)
+        x = self.transformer_encoder(x)
+        x = torch.flatten(x, start_dim=1)  # Flatten the output
+        x = F.relu(self.fc1(x))  # Apply the intermediate linear layer with ReLU activation
+        x = self.fc2(x)  # Apply the final linear layer
+        x = F.softmax(x, dim=1)  # Apply softmax activation
+        return x
+
 class SimpleLanguageModel(nn.Module):
     def __init__(self, vocab_size, sequence_length, embedding_dim, class_num, num_heads, hidden_dim, num_layers, dropout):
         super(SimpleLanguageModel, self).__init__()
@@ -339,18 +360,18 @@ class Teacher:
                 progress_bar = tqdm(total=total_batches, desc=f"Generating {val_train} data :")
             self.model.eval()
 
+            sample_batches = torch.split(samples, batch_size)
 
-            for batch_samples in data_loader:
-                # Perform inference on each batch
-                batch_outputs = self.model(batch_samples[0])  # Assuming samples are in the first element of the batch
-                #inputs_list.append(batch_samples[0].detach())
-                outputs_list.append(batch_outputs.detach())
-                if display_progress:
-                    progress_bar.update(1)
 
-            # Stack the outputs along the batch dimension
-            #inputs_return = torch.cat(inputs_list, dim=0)
-            # self.in_test = inputs_return
+            outputs_list = []
+
+            # Forward pass through the model in batches
+            with torch.no_grad():  
+                for batch in sample_batches:
+                    batch_outputs = self.model(batch)
+                    outputs_list.append(batch_outputs)
+
+            # Stack the batched outputs
             outputs_return = torch.cat(outputs_list, dim=0)
 
         if val_train == "train":
@@ -373,11 +394,11 @@ class Teacher:
             raise RuntimeError("Teacher is not configured. Run the configure() method of your teacher object before plotting.")
         if val_train == "val":
             if self.val_targets.shape == torch.Size([0]):
-                raise RuntimeError("There is no validation data to graph")
+                raise RuntimeError("There is no validation data to graph. set store_outputs = True in generate_data")
             test = torch.argmax(self.val_targets,axis = -1)
         else:
             if self.train_targets.shape == torch.Size([0]):
-                raise RuntimeError("There is no training data to graph")
+                raise RuntimeError("There is no training data to graph.  set store_outputs = True in generate_data")
             test = torch.argmax(self.train_targets,axis = -1)
         class_num = self.output_shape[0]
         class_counts = [np.count_nonzero(test == i) for i in range(1, class_num + 1)]
