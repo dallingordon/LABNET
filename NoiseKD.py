@@ -370,7 +370,8 @@ class Teacher:
                 for batch in sample_batches:
                     batch_outputs = self.model(batch)
                     outputs_list.append(batch_outputs)
-
+                    if display_progress:
+                        progress_bar.update(1)
             # Stack the batched outputs
             outputs_return = torch.cat(outputs_list, dim=0)
 
