@@ -48,7 +48,7 @@ class TransformerEncoder(nn.Module):
     def __init__(self, embedding_dim, num_heads, hidden_dim, num_layers, dropout):
         super(TransformerEncoder, self).__init__()
         self.transformer = nn.TransformerEncoder(
-            nn.TransformerEncoderLayer(embedding_dim, num_heads, hidden_dim, dropout),
+            nn.TransformerEncoderLayer(embedding_dim, num_heads, hidden_dim, dropout, batch_first=True),
             num_layers
         )
 
@@ -282,10 +282,17 @@ class Teacher:
         dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
         progress_bar = tqdm(total=gen_epochs, desc="Configuring Teacher:")
+        if torch.cuda.is_available():
+            device = torch.device("cuda")
+            print("GPU is available")
+        else:
+            device = torch.device("cpu")
+            print("GPU is not available, using CPU")
+        self.model.to(device)
         self.model.train()
         for epoch in range(gen_epochs):
             for batch_samples, batch_out_temp in dataloader:
-                
+                batch_samples, batch_out_temp = batch_samples.to(device), batch_out_temp.to(device)
                 #this is an attempt to have more balanced outputs from my fake model
                 random_number = random.random()
                 if random_number < random_shuffle: # this means higher r_s is more shuffling.  makes more sense imo
@@ -355,9 +362,18 @@ class Teacher:
         
         total_batches = len(data_loader)
         
+        
         if store_outputs:
             if display_progress:
                 progress_bar = tqdm(total=total_batches, desc=f"Generating {val_train} data :")
+            if torch.cuda.is_available():
+                device = torch.device("cuda")
+                print("GPU is available")
+            else:
+                device = torch.device("cpu")
+                print("GPU is not available, using CPU")
+            
+            self.model.to(device)
             self.model.eval()
 
             sample_batches = torch.split(samples, batch_size)
@@ -368,6 +384,7 @@ class Teacher:
             # Forward pass through the model in batches
             with torch.no_grad():  
                 for batch in sample_batches:
+                    batch = batch.to(device)
                     batch_outputs = self.model(batch)
                     outputs_list.append(batch_outputs)
                     if display_progress:
