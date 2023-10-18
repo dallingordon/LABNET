@@ -368,10 +368,10 @@ class Teacher:
                 progress_bar = tqdm(total=total_batches, desc=f"Generating {val_train} data :")
             if torch.cuda.is_available():
                 device = torch.device("cuda")
-                print("GPU is available")
+                
             else:
                 device = torch.device("cpu")
-                print("GPU is not available, using CPU")
+                
             
             self.model.to(device)
             self.model.eval()
