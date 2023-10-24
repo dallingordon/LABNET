@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader, TensorDataset
 import random
 import torch.nn.functional as F
 import torch.distributions as dist
+import copy
 
 
 import numpy as np
@@ -137,11 +138,43 @@ def one_hot_last_dim(tensor_shape):
     zero_tensor[..., :, last_dim_indices] = (random_idx[..., np.newaxis] == last_dim_indices)
     return zero_tensor
 
+#for a linearized emb dim model:
+def batch_one_hot(input_sequences, vocab_size):
+    batch_size = input_sequences.size(0)
+    max_seq_length = input_sequences.size(1)
+    
+    # Create a tensor to store the one-hot encodings
+    one_hot_input = torch.zeros(batch_size, max_seq_length, vocab_size)
+    
+    # Use scatter_ to set the appropriate elements to 1 in each batch
+    one_hot_input.scatter_(2, input_sequences.unsqueeze(2), 1)
+    
+    return one_hot_input
+
+def has_embedding_layer(model):
+    for module in model.modules():
+        if isinstance(module, nn.Embedding):
+            return True
+    return False
+
+def Linearize_Embedding(embedding_layer):
+    embedding_weight_tensor = embedding_layer.weight.detach() 
+    shape = embedding_weight_tensor.shape
+    vocab_size = shape[0]
+    embedding_dim = shape[1]
+    lin = nn.Linear(vocab_size,embedding_dim, bias = False)
+    #print(lin.weight.shape)
+    #print(embedding_weight_tensor.shape)
+    lin.weight = nn.Parameter(embedding_weight_tensor.T) #not sure about this transpose
+    return lin
+
+
+
 class Teacher:
     
     def __init__(self,layer_sizes,input_shape = None):
             
-            
+        self.linearized = False
         self.cofigured = False
         self.input_shape = None
         self.output_shape = None
@@ -180,7 +213,19 @@ class Teacher:
 
             # Add output layer
             self.model.add_module("output_layer", nn.Linear(layer_sizes[-2], num_outputs))
-
+    
+    def linearize_embedding(self):
+        if not has_embedding_layer(self.model):
+            raise ValueError("Your model should have an embedding layer to linearize.")
+        if not self.cofigured:
+            raise ValueError("Run .configure or .load_state_dict on your Teacher before linearizing.")
+        embedding_layer = self.model.embedding
+        linearized_embedding = Linearize_Embedding(embedding_layer)
+        model_copy = copy.deepcopy(self.model)
+        model_copy.embedding = linearized_embedding
+        self.model = model_copy
+        self.linearized = True
+        print("Teacher Embedding Linearized!")
 
     def load_state_dict(self,path):
         self.model.load_state_dict(torch.load(path))
@@ -314,7 +359,7 @@ class Teacher:
         progress_bar.close()
         self.model.eval()
         print("Teacher Configured")
-    #this would be theoretical perfect dark knowledge
+
     def generate_data(self
                       , val_train = "train"
                       , n = 1000
@@ -338,9 +383,21 @@ class Teacher:
         #output_size = self.output_shape un used
         gen_shape = (n,) + input_size
         
+        if self.linearized:
+            vocab_size = (self.model.embedding.in_features,)
+            gen_shape = (n,) + input_size + vocab_size
+        
         if dist_type == 'normal':
             samples = np.random.normal(m, std, gen_shape)
             samples = torch.from_numpy(samples).float()
+        elif dist_type == 'normal_clipped':
+            samples = np.random.normal(0.5, 0.2, gen_shape)
+            samples = np.clip(samples, 0, 1)
+            samples = torch.from_numpy(samples).float()
+        elif dist_type == 'normal_clipped_inverse':
+            samples = np.random.normal(0.5, 0.2, gen_shape)
+            samples = 1-np.clip(samples, 0, 1) #fat tails, skinny in the middle
+            samples = torch.from_numpy(samples).float()   
         elif dist_type == 'uniform':
             samples = np.random.uniform(m, std, gen_shape)
             samples = torch.from_numpy(samples).float()
@@ -351,7 +408,7 @@ class Teacher:
             samples = generate_heteroskedastic_ints(gen_shape, alpha, beta,m-1)
             samples = torch.from_numpy(samples)
         else:
-            raise ValueError('dist_type must be normal, uniform, hetero, or ints.')
+            raise ValueError('dist_type must be normal, normal_clipped, normal_clipped_inverse, uniform, hetero, or ints.')
 
         
         ##after its trained a bit, it uses those weights to make "perfect" outputs
