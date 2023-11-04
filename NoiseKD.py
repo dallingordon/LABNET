@@ -404,6 +404,11 @@ class Teacher:
         elif dist_type == "ints":
             samples = np.random.randint(0, high=m, size=gen_shape)
             samples = torch.from_numpy(samples)
+        elif dist_type == "linearized_ints":
+            ## these are for validating while training a linearized embedding model.
+            samples = np.random.randint(0, high=m, size=gen_shape)
+            samples = torch.from_numpy(samples)
+            samples = F.one_hot(samples, num_classes=m).float()
         elif dist_type == "hetero":
             samples = generate_heteroskedastic_ints(gen_shape, alpha, beta,m-1)
             samples = torch.from_numpy(samples)
